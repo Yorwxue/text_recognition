@@ -11,12 +11,17 @@ from utils.label_converter import AttnLabelConverter
 
 
 if __name__ == "__main__":
+    # gpu setting
+    gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+    if gpu_devices:
+        tf.config.experimental.set_memory_growth(gpu_devices[0], True)
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--test_folder', default='./images/', type=str, help='folder path to input images')
     # Training Parameter
     parser.add_argument('--batch_max_length', type=int, default=25, help='maximum-label-length')
     parser.add_argument('--learning_rate', type=float, default=0.0001)
-    parser.add_argument('--batch_size', type=int, default=64)  # batch size for training
+    parser.add_argument('--batch_size', type=int, default=128)  # batch size for training
     parser.add_argument('--iterations', '--iter', type=int, default=100000)
     parser.add_argument('--weight_dir', type=str, default=r"./weights/", help="directory to save model weights")
     parser.add_argument('--log_dir', type=str, default=r"./logs/", help="directory to save logs")
@@ -42,6 +47,7 @@ if __name__ == "__main__":
     log_filename = "%s.txt" % datetime.datetime.now().strftime("%Y_%m_%d")
     if not os.path.exists(args.log_dir):
         os.makedirs(args.log_dir)
+    summary_writer = tf.summary.create_file_writer(args.log_dir)
 
     # model configuration
     with open(args.character, "r") as fr:
@@ -105,20 +111,25 @@ if __name__ == "__main__":
             # checkpoint.save(checkpoint_prefix)
             manager.save()
 
-        # logs
-        batch_size = np.shape(data[0])[0]
-        preds_index = tf.argmax(preds, axis=-1)
-        length_for_pred = tf.zeros((batch_size, args.batch_max_length))
-        preds_str = converter.decode(preds_index, length_for_pred)
-        log = "epoch_%d, " % epoch_idx
-        for idx in range(batch_size):
-            # https://docs.python.org/3/library/re.html
-            filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
-            log += "%s, gt: %s, pred: %s, " % (
-                filename,
-                decoded_labels[idx][0],
-                preds_str[idx].replace("[B]", "").replace("[E]", "")
-            )
+            # logs
+            with summary_writer.as_default():
+                tf.summary.scalar('loss', loss, step=epoch_idx)
+                # tf.summary.trace_on(graph=True, profiler=True)
+                # tf.summary.trace_export(name="func_trace", step=0, profiler_outdir=args.log_dir)
 
-        with open(os.path.join(args.log_dir, log_filename), "a+") as fw:
-            fw.write(log+'\n')
+            batch_size = np.shape(data[0])[0]
+            preds_index = tf.argmax(preds, axis=-1)
+            length_for_pred = tf.zeros((batch_size, args.batch_max_length))
+            preds_str = converter.decode(preds_index, length_for_pred)
+            log = "epoch_%d, batch_%d" % (epoch_idx, batch_idx)
+            for idx in range(batch_size):
+                # https://docs.python.org/3/library/re.html
+                filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
+                log += "%s, gt: %s, pred: %s, " % (
+                    filename,
+                    decoded_labels[idx][0],
+                    preds_str[idx].replace("[B]", "").replace("[E]", "")
+                )
+
+            with open(os.path.join(args.log_dir, log_filename), "a+") as fw:
+                fw.write(log+'\n')

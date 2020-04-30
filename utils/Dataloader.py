@@ -79,17 +79,22 @@ class MJSynthDataset(tf.data.Dataset):
 
     def __new__(cls, root, shape):
         imgH, imgW, ch = shape
-        image_path_list = list()
-        count = 0
-        for dirpath, dirnames, filenames in os.walk(root):
-            for name in filenames:
-                _, ext = os.path.splitext(name)
-                ext = ext.lower()
-                if ext == '.jpg' or ext == '.jpeg' or ext == '.png':
-                    image_path_list.append(os.path.join(dirpath, name))
-                    count += 1
+        # image_path_list = list()
+        # count = 0
+        # for dirpath, dirnames, filenames in os.walk(root):
+        #     for name in filenames:
+        #         _, ext = os.path.splitext(name)
+        #         ext = ext.lower()
+        #         if ext == '.jpg' or ext == '.jpeg' or ext == '.png':
+        #             image_path_list.append(os.path.join(dirpath, name))
+        #             count += 1
+        root_path = os.path.abspath(os.path.join(root, "ramdisk/max/90kDICT32px"))
+        with open(os.path.join(root_path, "annotation_train.txt"), "r") as fr:
+            raw_data = fr.readlines()
+        image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", raw_data[0]).group(1)) for image_path in raw_data]
 
         image_path_list = natsorted(image_path_list)
+        np.random.shuffle(image_path_list)
         nSamples = len(image_path_list)
 
         return tf.data.Dataset.from_generator(
