@@ -81,15 +81,13 @@ class MJSynthDataset(tf.data.Dataset):
         imgH, imgW, ch = shape
         image_path_list = list()
         count = 0
-        for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+        for dirpath, dirnames, filenames in os.walk(root):
             for name in filenames:
                 _, ext = os.path.splitext(name)
                 ext = ext.lower()
                 if ext == '.jpg' or ext == '.jpeg' or ext == '.png':
                     image_path_list.append(os.path.join(dirpath, name))
                     count += 1
-            if count >= 100:
-                break
 
         image_path_list = natsorted(image_path_list)
         nSamples = len(image_path_list)

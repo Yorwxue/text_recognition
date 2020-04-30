@@ -23,7 +23,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=1, help='learning rate, default=1.0 for Adadelta')
     parser.add_argument('--rho', type=float, default=0.95, help='decay rate rho for Adadelta. default=0.95')
     parser.add_argument('--eps', type=float, default=1e-8, help='eps for Adadelta. default=1e-8')
-    parser.add_argument('--epochs', type=int, default=1000, help='number of epochs')
+    parser.add_argument('--epochs', type=int, default=100000, help='number of epochs')
     # Model Architecture
     parser.add_argument('--character', type=str, default='./config/character', help='path to definition of character label')
     parser.add_argument('--imgH', type=int, default=32, help='the height of the input image')
@@ -101,25 +101,24 @@ if __name__ == "__main__":
             gradients = tape.gradient(losses, net.trainable_variables)
             optimizer.apply_gradients(zip(gradients, net.trainable_variables))
             loss = tf.nn.compute_average_loss(losses)
-            print("batch_index: %d, loss: " % (batch_idx), loss)
+            print("epoch_index: %d, batch_index: %d, loss: " % (epoch_idx, batch_idx), loss)
             # checkpoint.save(checkpoint_prefix)
             manager.save()
 
-            # logs
-            if batch_idx % 10 == 0:
-                batch_size = np.shape(data[0])[0]
-                preds_index = tf.argmax(preds, axis=-1)
-                length_for_pred = tf.zeros((batch_size, args.batch_max_length))
-                preds_str = converter.decode(preds_index, length_for_pred)
-                log = ""
-                for idx in range(batch_size):
-                    # https://docs.python.org/3/library/re.html
-                    filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
-                    log += "%s, gt: %s, pred: %s, " % (
-                        filename,
-                        decoded_labels[idx][0],
-                        preds_str[idx].replace("[B]", "").replace("[E]", "")
-                    )
+        # logs
+        batch_size = np.shape(data[0])[0]
+        preds_index = tf.argmax(preds, axis=-1)
+        length_for_pred = tf.zeros((batch_size, args.batch_max_length))
+        preds_str = converter.decode(preds_index, length_for_pred)
+        log = "epoch_%d, " % epoch_idx
+        for idx in range(batch_size):
+            # https://docs.python.org/3/library/re.html
+            filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
+            log += "%s, gt: %s, pred: %s, " % (
+                filename,
+                decoded_labels[idx][0],
+                preds_str[idx].replace("[B]", "").replace("[E]", "")
+            )
 
-                with open(os.path.join(args.log_dir, log_filename), "a+") as fw:
-                    fw.write(log)
+        with open(os.path.join(args.log_dir, log_filename), "a+") as fw:
+            fw.write(log+'\n')
