@@ -77,7 +77,8 @@ class MJSynthDataset(tf.data.Dataset):
 
             yield (img, [label], [image_path])
 
-    def __new__(cls, root, shape):
+    # def __new__(cls, root, shape):
+    def __new__(cls, image_path_list, shape):
         imgH, imgW, ch = shape
         # image_path_list = list()
         # count = 0
@@ -88,10 +89,6 @@ class MJSynthDataset(tf.data.Dataset):
         #         if ext == '.jpg' or ext == '.jpeg' or ext == '.png':
         #             image_path_list.append(os.path.join(dirpath, name))
         #             count += 1
-        root_path = os.path.abspath(os.path.join(root, "ramdisk/max/90kDICT32px"))
-        with open(os.path.join(root_path, "annotation_train.txt"), "r") as fr:
-            raw_data = fr.readlines()
-        image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", raw_data[0]).group(1)) for image_path in raw_data]
 
         image_path_list = natsorted(image_path_list)
         np.random.shuffle(image_path_list)
@@ -111,8 +108,13 @@ if __name__ == "__main__":
     # root = os.path.abspath("../images")
     # dataset = RawDataset(root, (32, 100, 3))
 
-    root = os.path.abspath("../dataset/mnt")
-    dataset = MJSynthDataset(root, (32, 100, 3))
+    # root = os.path.abspath("../dataset/mnt")
+    # dataset = MJSynthDataset(root, (32, 100, 3))
+    root_path = os.path.abspath(os.path.join("./dataset/mnt", "ramdisk/max/90kDICT32px"))
+    with open(os.path.join(root_path, "annotation_train.txt"), "r") as fr:
+        raw_data = fr.readlines()
+    image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", raw_data[0]).group(1)) for image_path in raw_data]
+    dataset = MJSynthDataset(image_path_list, (32, 100, 3))
     dataset = dataset.batch(batch_size)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
 

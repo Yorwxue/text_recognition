@@ -86,7 +86,12 @@ if __name__ == "__main__":
     # dataset
     filenames = os.listdir(args.test_folder)
     # https://heartbeat.fritz.ai/building-a-data-pipeline-with-tensorflow-3047656b5095
-    dataset = MJSynthDataset(os.path.abspath("./dataset/mnt"), (32, 100, 3))
+    root_path = os.path.abspath(os.path.join("./dataset/mnt", "ramdisk/max/90kDICT32px"))
+    with open(os.path.join(root_path, "annotation_train.txt"), "r") as fr:
+        raw_data = fr.readlines()
+    image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", raw_data[0]).group(1)) for image_path in raw_data]
+    total_data_size = len(image_path_list)
+    dataset = MJSynthDataset(image_path_list, (32, 100, 3))
     dataset = dataset.batch(args.batch_size)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -107,7 +112,7 @@ if __name__ == "__main__":
             gradients = tape.gradient(losses, net.trainable_variables)
             optimizer.apply_gradients(zip(gradients, net.trainable_variables))
             loss = tf.nn.compute_average_loss(losses)
-            print("epoch_index: %d, batch_index: %d, loss: " % (epoch_idx, batch_idx), loss)
+            print("epoch_index: %d, batch_index: (%d, %d), loss: " % (epoch_idx, batch_idx, (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0)), loss)
             # checkpoint.save(checkpoint_prefix)
             manager.save()
 
@@ -121,7 +126,7 @@ if __name__ == "__main__":
             preds_index = tf.argmax(preds, axis=-1)
             length_for_pred = tf.zeros((batch_size, args.batch_max_length))
             preds_str = converter.decode(preds_index, length_for_pred)
-            log = "epoch_%d, batch_%d" % (epoch_idx, batch_idx)
+            log = "epoch_%d, batch_(%d, %d)" % (epoch_idx, batch_idx, (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0))
             for idx in range(batch_size):
                 # https://docs.python.org/3/library/re.html
                 filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
