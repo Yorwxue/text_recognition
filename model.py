@@ -2,6 +2,7 @@ import tensorflow as tf
 from basenet.transformation import TPS_SpatialTransformerNetwork
 from basenet.extration import ResNet
 from basenet.prediction import Attention
+from basenet.sequence import BidirectionalLSTM
 
 
 class Model(tf.keras.Model):
@@ -25,9 +26,9 @@ class Model(tf.keras.Model):
 
         # Sequence modeling
         if self.stages["Seq"] == 'BiLSTM':
-            self.SequenceModeling = tf.keras.Model([
-                tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(args.hidden_size, return_sequences=True)),
-                tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(args.hidden_size, return_sequences=True))
+            self.SequenceModeling = tf.keras.models.Sequential([
+                BidirectionalLSTM(args.hidden_size, args.hidden_size),
+                BidirectionalLSTM(args.hidden_size, args.hidden_size)
             ])
         else:
             print('No SequenceModeling module specified')
@@ -35,11 +36,11 @@ class Model(tf.keras.Model):
 
         # Prediction
         if self.stages["Pred"] == 'Attn':
-            self.Prediction = Attention(args.hidden_size)
+            self.Prediction = Attention(args.hidden_size, args.num_class)
         else:
             raise NotImplementedError
 
-    def call(self, input, text, is_train=True):
+    def call(self, input, text, is_train=False):
         # Transformation
         if self.stages["Trans"] == "TPS":
             input = self.Transformation(input)
@@ -47,12 +48,13 @@ class Model(tf.keras.Model):
         # FeatureExtraction
         visual_feature = self.FeatureExtraction(input)
         visual_feature = tf.transpose(visual_feature, (0, 2, 3, 1))  # [b, h, w, c] -> [b, w, c, h]
+        visual_feature = tf.squeeze(visual_feature, axis=-1)  # cause h = 1
 
         # Sequence modeling
         contextual_feature = self.SequenceModeling(visual_feature)
 
         # Prediction
-        prediction = self.Prediction(contextual_feature.contiguous(), text, is_train,
-                                     batch_max_length=self.opt.batch_max_length)
+        prediction = self.Prediction(contextual_feature, text, is_train,
+                                     batch_max_length=self.args.batch_max_length)
 
         return prediction

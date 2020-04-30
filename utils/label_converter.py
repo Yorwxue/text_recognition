@@ -19,7 +19,7 @@ class AttnLabelConverter(tf.keras.Model):
             # print(i, char)
             self.dict[char] = i
 
-    def encode(self, text, batch_max_length=25):
+    def encode(self, texts, batch_max_length=25):
         """ convert text-label into text-index.
         input:
             text: text labels of each image. [batch_size]
@@ -29,18 +29,20 @@ class AttnLabelConverter(tf.keras.Model):
                 text[:, 0] is [B] token and text is padded with [B] token after [E] token.
             length : the length of output of attention decoder, which count [E] token also. [3, 7, ....] [batch_size]
         """
-        length = [len(s) + 1 for s in text]  # +1 for [E] at end of sentence.
-        # batch_max_length = max(length) # this is not allowed for multi-gpu setting
+        lengths = [len(s[0]) + 1 for s in texts]  # +1 for [E] at end of sentence.
+        # batch_max_length = max(lengths) # this is not allowed for multi-gpu setting
         batch_max_length += 1
         # additional +1 for [B] at first step. batch_text is padded with [B] token after [E] token.
-        batch_text = tf.zeros(text.shape[1])
+        batch_text = tf.zeros((len(texts), batch_max_length + 1), dtype=tf.int32)
 
-        for i, t in enumerate(text):
-            text = list(t)
+        for i, t in enumerate(texts):
+            text = list(t[0])
             text.append('[E]')
-            text = [self.dict[char] for char in text]
-            batch_text[i][1:1 + len(text)] = text  # batch_text[:, 0] = [B] token
-        return batch_text, length
+            text = [(self.dict[char.lower()] if '[' not in char else self.dict[char]) for char in text]
+            # batch_text[i][1:1 + len(text)] = text  # batch_text[:, 0] = [B] token
+            indices = tf.stack([[i]*len(text), tf.range(1, 1 + len(text))], axis=1)
+            batch_text = tf.tensor_scatter_nd_update(batch_text, indices, text)
+        return batch_text, lengths
 
     def decode(self, text_index, length):
         """ convert text-index into text-label. """
