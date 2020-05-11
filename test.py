@@ -33,44 +33,45 @@ if __name__ == "__main__":
     parser.add_argument('--hidden_size', type=int, default=256, help='the size of the LSTM hidden state')
     args = parser.parse_args()
 
-    # model configuration
-    with open(args.character, "r") as fr:
-        character = fr.readline()
-        character = character.replace("\n", "")
-    if 'CTC' in args.Prediction:
-        raise NotImplementedError
-    else:
-        converter = AttnLabelConverter(character)
+    with tf.device('/cpu:0'):
+        # model configuration
+        with open(args.character, "r") as fr:
+            character = fr.readline()
+            character = character.replace("\n", "")
+        if 'CTC' in args.Prediction:
+            raise NotImplementedError
+        else:
+            converter = AttnLabelConverter(character)
 
-    args.num_class = len(converter.character)
-    net = Model(args)
+        args.num_class = len(converter.character)
+        net = Model(args)
 
-    filenames = os.listdir(args.test_folder)
-    # https://heartbeat.fritz.ai/building-a-data-pipeline-with-tensorflow-3047656b5095
-    raw_data = RawDataset(os.path.abspath("./images"), (args.imgH, args.imgW, args.input_channel))
-    raw_data = raw_data.batch(args.batch_size)
-    raw_data = raw_data.prefetch(tf.data.experimental.AUTOTUNE)
+        filenames = os.listdir(args.test_folder)
+        # https://heartbeat.fritz.ai/building-a-data-pipeline-with-tensorflow-3047656b5095
+        raw_data = RawDataset(os.path.abspath("./images"), (args.imgH, args.imgW, args.input_channel))
+        raw_data = raw_data.batch(args.batch_size)
+        raw_data = raw_data.prefetch(tf.data.experimental.AUTOTUNE)
 
-    for data in raw_data:
-        img_tensors, paths = data
-        paths = np.asarray(paths)
-        batch_size = np.shape(img_tensors)[0]
-        length_for_pred = tf.zeros((batch_size, args.batch_max_length))
+        for data in raw_data:
+            img_tensors, paths = data
+            paths = np.asarray(paths)
+            batch_size = np.shape(img_tensors)[0]
+            length_for_pred = tf.zeros((batch_size, args.batch_max_length))
 
-        # # show image
-        # img = np.asarray(img)
-        # print(np.shape(img))
-        # if args.input_channel == 3:
-        #     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        # cv2.imshow("%d" % idx, img)
-        # cv2.waitKey(3000)
+            # # show image
+            # img = np.asarray(img)
+            # print(np.shape(img))
+            # if args.input_channel == 3:
+            #     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            # cv2.imshow("%d" % idx, img)
+            # cv2.waitKey(3000)
 
-        text = tf.zeros((batch_size, args.batch_max_length + 1))
-        preds = net(img_tensors, text, is_train=False)
+            text = tf.zeros((batch_size, args.batch_max_length + 1))
+            preds = net(img_tensors, text, is_train=False)
 
-        preds_index = tf.argmax(preds, axis=-1)
-        preds_str = converter.decode(preds_index, length_for_pred)
-        for idx in range(batch_size):
-            # https://docs.python.org/3/library/re.html
-            filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
-            print("%s, text: %s, length: %d" % (filename, preds_str[idx], len(preds_str[idx].replace("[B]", "B").replace("[E]", "E"))))
+            preds_index = tf.argmax(preds, axis=-1)
+            preds_str = converter.decode(preds_index, length_for_pred)
+            for idx in range(batch_size):
+                # https://docs.python.org/3/library/re.html
+                filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
+                print("%s, text: %s, length: %d" % (filename, preds_str[idx], len(preds_str[idx].replace("[B]", "B").replace("[E]", "E"))))

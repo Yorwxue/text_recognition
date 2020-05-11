@@ -90,6 +90,10 @@ class MJSynthDataset(tf.data.Dataset):
         #             image_path_list.append(os.path.join(dirpath, name))
         #             count += 1
 
+        # only for code testing
+        # image_path_list = image_path_list[:5000]
+        #
+
         image_path_list = natsorted(image_path_list)
         np.random.shuffle(image_path_list)
         nSamples = len(image_path_list)

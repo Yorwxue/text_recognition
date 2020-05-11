@@ -89,7 +89,7 @@ if __name__ == "__main__":
     root_path = os.path.abspath(os.path.join("./dataset/mnt", "ramdisk/max/90kDICT32px"))
     with open(os.path.join(root_path, "annotation_train.txt"), "r") as fr:
         raw_data = fr.readlines()
-    image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", raw_data[0]).group(1)) for image_path in raw_data]
+    image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", image_path).group(1)) for image_path in raw_data]
     total_data_size = len(image_path_list)
     dataset = MJSynthDataset(image_path_list, (32, 100, 3))
     dataset = dataset.batch(args.batch_size)
@@ -124,7 +124,7 @@ if __name__ == "__main__":
 
             batch_size = np.shape(data[0])[0]
             preds_index = tf.argmax(preds, axis=-1)
-            length_for_pred = tf.zeros((batch_size, args.batch_max_length))
+            length_for_pred = tf.zeros((batch_size, args.batch_max_length), dtype=tf.int32)
             preds_str = converter.decode(preds_index, length_for_pred)
             log = "epoch_%d, batch_(%d, %d)" % (epoch_idx, batch_idx, (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0))
             for idx in range(batch_size):
