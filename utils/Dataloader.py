@@ -83,7 +83,7 @@ class MJSynthDataset(tf.data.Dataset):
 
         # only for code testing
         ##########################################
-        image_path_list = image_path_list[:5000]
+        # image_path_list = image_path_list[:5000]
         ##########################################
 
         image_path_list = natsorted(image_path_list)
