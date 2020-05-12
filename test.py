@@ -28,7 +28,7 @@ if __name__ == "__main__":
     parser.add_argument('--FeatureExtraction', type=str, default="ResNet", help='FeatureExtraction stage. VGG|RCNN|ResNet')
     parser.add_argument('--SequenceModeling', type=str, default="BiLSTM", help='SequenceModeling stage. None|BiLSTM')
     parser.add_argument('--Prediction', type=str, default="Attn", help='Prediction stage. CTC|Attn')
-    parser.add_argument('--input_channel', type=int, default=1, help='the number of input channel of Feature extractor')
+    parser.add_argument('--input_channel', type=int, default=3, help='the number of input channel of Feature extractor')
     parser.add_argument('--output_channel', type=int, default=512, help='the number of output channel of Feature extractor')
     parser.add_argument('--hidden_size', type=int, default=256, help='the size of the LSTM hidden state')
     args = parser.parse_args()
@@ -45,6 +45,13 @@ if __name__ == "__main__":
 
         args.num_class = len(converter.character)
         net = Model(args)
+
+        # model restore
+        checkpoint = tf.train.Checkpoint(model=net)
+        checkpoint_dir = tf.train.latest_checkpoint(args.weight_dir)
+        # checkpoint_dir = os.path.join(args.weight_dir, "ckpt-10")
+        checkpoint.restore(checkpoint_dir)
+        print("Restored from %s" % checkpoint_dir)
 
         filenames = os.listdir(args.test_folder)
         # https://heartbeat.fritz.ai/building-a-data-pipeline-with-tensorflow-3047656b5095

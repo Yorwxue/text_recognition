@@ -38,7 +38,7 @@ if __name__ == "__main__":
     parser.add_argument('--FeatureExtraction', type=str, default="ResNet", help='FeatureExtraction stage. VGG|RCNN|ResNet')
     parser.add_argument('--SequenceModeling', type=str, default="BiLSTM", help='SequenceModeling stage. None|BiLSTM')
     parser.add_argument('--Prediction', type=str, default="Attn", help='Prediction stage. CTC|Attn')
-    parser.add_argument('--input_channel', type=int, default=1, help='the number of input channel of Feature extractor')
+    parser.add_argument('--input_channel', type=int, default=3, help='the number of input channel of Feature extractor')
     parser.add_argument('--output_channel', type=int, default=512, help='the number of output channel of Feature extractor')
     parser.add_argument('--hidden_size', type=int, default=256, help='the size of the LSTM hidden state')
     args = parser.parse_args()
@@ -91,7 +91,7 @@ if __name__ == "__main__":
         raw_data = fr.readlines()
     image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", image_path).group(1)) for image_path in raw_data]
     total_data_size = len(image_path_list)
-    dataset = MJSynthDataset(image_path_list, (32, 100, 3))
+    dataset = MJSynthDataset(image_path_list, (32, 100, args.input_channel))
     dataset = dataset.batch(args.batch_size)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -129,28 +129,32 @@ if __name__ == "__main__":
             #########################################
 
             print("epoch_index: %d, batch_index: (%d, %d), loss: " % (epoch_idx, batch_idx, (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0)), loss)
-            # checkpoint.save(checkpoint_prefix)
-            manager.save()
 
-            # logs
-            with summary_writer.as_default():
-                tf.summary.scalar('loss', loss, step=epoch_idx)
-                # tf.summary.trace_on(graph=True, profiler=True)
-                # tf.summary.trace_export(name="func_trace", step=0, profiler_outdir=args.log_dir)
+            if batch_idx % 50 == 0:
+                # checkpoint.save(checkpoint_prefix)
+                manager.save()
 
-            batch_size = np.shape(data[0])[0]
-            preds_index = tf.argmax(preds, axis=-1)
-            length_for_pred = tf.zeros((batch_size, args.batch_max_length), dtype=tf.int32)
-            preds_str = converter.decode(preds_index, length_for_pred)
-            log = "epoch_%d, batch_(%d, %d)" % (epoch_idx, batch_idx, (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0))
-            for idx in range(batch_size):
-                # https://docs.python.org/3/library/re.html
-                filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
-                log += "%s, gt: %s, pred: %s, " % (
-                    filename,
-                    decoded_labels[idx][0],
-                    preds_str[idx].replace("[B]", "").replace("[E]", "")
-                )
+                # logs
+                with summary_writer.as_default():
+                    tf.summary.scalar('loss', loss, step=epoch_idx)
+                    # tf.summary.trace_on(graph=True, profiler=True)
+                    # tf.summary.trace_export(name="func_trace", step=0, profiler_outdir=args.log_dir)
 
-            with open(os.path.join(args.log_dir, log_filename), "a+") as fw:
-                fw.write(log+'\n')
+                batch_size = np.shape(data[0])[0]
+                preds_index = tf.argmax(preds, axis=-1)
+                length_for_pred = tf.zeros((batch_size, args.batch_max_length), dtype=tf.int32)
+                preds_str = converter.decode(preds_index, length_for_pred)
+                log = "epoch_%d, batch_(%d, %d)" % (epoch_idx, batch_idx, (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0))
+                for idx in range(batch_size):
+                    # https://docs.python.org/3/library/re.html
+                    filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
+                    log += "%s, gt: %s, pred: %s, " % (
+                        filename,
+                        decoded_labels[idx][0],
+                        preds_str[idx].replace("[B]", "").replace("[E]", "")
+                    )
+
+                with open(os.path.join(args.log_dir, log_filename), "a+") as fw:
+                    fw.write(log+'\n')
+
+        manager.save()
