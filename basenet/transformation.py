@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 
+
 class TPS_SpatialTransformerNetwork(tf.keras.Model):
     def __init__(self, F, I_r_size):
         """
@@ -34,8 +35,10 @@ class LocalizationNet(tf.keras.Model):
         # fc2 initializer
         init_kernel = tf.random_uniform_initializer(0, 0)
         ctrl_pts_x = np.linspace(-1.0, 1.0, int(self.F / 2))
-        ctrl_pts_y_top = np.linspace(0.0, -1.0, num=int(self.F / 2))
-        ctrl_pts_y_bottom = np.linspace(1.0, 0.0, num=int(self.F / 2))
+        # ctrl_pts_y_top = np.linspace(0.0, -1.0, num=int(self.F / 2))
+        ctrl_pts_y_top = -1 * np.ones(int(self.F / 2))
+        # ctrl_pts_y_bottom = np.linspace(1.0, 0.0, num=int(self.F / 2))
+        ctrl_pts_y_bottom = np.ones(int(self.F / 2))
         ctrl_pts_top = np.stack([ctrl_pts_x, ctrl_pts_y_top], axis=1)
         ctrl_pts_bottom = np.stack([ctrl_pts_x, ctrl_pts_y_bottom], axis=1)
         init_bias = np.concatenate([ctrl_pts_top, ctrl_pts_bottom], axis=0)
@@ -252,8 +255,23 @@ def get_pixel_value(img, x, y):
 
 
 if __name__ == "__main__":
-    import numpy as np
-    x = np.random.uniform(0, 255, size=(1, 100, 32, 1))
-    net = LocalizationNet(5)
-    y = net(x)
-    print()
+    import os
+    import cv2
+    from PIL import Image
+    from utils.img_utils import ratioImputation
+
+    F = 20  # number of focal points
+    imgH, imgW = 32, 100
+    # x = np.random.uniform(0, 255, size=(1, imgH, imgW, 1))
+    image_path = os.path.abspath("../images/114_Spencerian_73323.jpg")
+    image = np.array(Image.open(image_path), dtype=np.float32)[:, :, :3]  # rgb
+    processed_image = ratioImputation(image, (imgH, imgW))
+    x = np.expand_dims(processed_image, axis=0)
+    x = np.asarray(x, dtype=np.float32)
+
+    with tf.device('/cpu:0'):
+        net = TPS_SpatialTransformerNetwork(F, I_r_size=(imgH, imgW))
+        y = net(x)
+        trans_img = np.asarray(y, dtype=np.uint8)
+        cv2.imwrite("../test.jpg", cv2.cvtColor(trans_img[0], cv2.COLOR_RGB2BGR))
+        print()

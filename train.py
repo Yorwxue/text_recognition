@@ -105,13 +105,29 @@ if __name__ == "__main__":
                 if 'CTC' in args.Prediction:
                     raise NotImplementedError
                 else:
-                    preds = net(image_tensors, text[:, :-1], is_train=False)  # align with Attention.forward
+                    trans, preds = net(image_tensors, text[:, :-1], is_train=False)  # align with Attention.forward
                     target = text[:, 1:]  # without [B] Symbol
                     losses = loss_fn(tf.one_hot(target, args.num_class), preds)
 
+                    # save transformed image
+                    # cv2.imwrite("in.jpg", np.asarray(image_tensors[0], np.int))
+                    # cv2.imwrite("out.jpg", np.asarray(trans[0], np.int))
+
             gradients = tape.gradient(losses, net.trainable_variables)
-            optimizer.apply_gradients(zip(gradients, net.trainable_variables))
             loss = tf.nn.compute_average_loss(losses)
+
+            # training strategy
+            #########################################
+            # 1. Freeze parameters of Transformation net
+            if loss > 5:
+                trainable_variables = list()
+                optimizer.apply_gradients(zip(gradients, net.trainable_variables[8:]))  # without Transformation
+
+            # 2. Apply gradients to all net
+            else:
+                optimizer.apply_gradients(zip(gradients, net.trainable_variables))
+            #########################################
+
             print("epoch_index: %d, batch_index: (%d, %d), loss: " % (epoch_idx, batch_idx, (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0)), loss)
             # checkpoint.save(checkpoint_prefix)
             manager.save()

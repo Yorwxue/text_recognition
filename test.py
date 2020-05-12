@@ -67,7 +67,7 @@ if __name__ == "__main__":
             # cv2.waitKey(3000)
 
             text = tf.zeros((batch_size, args.batch_max_length + 1))
-            preds = net(img_tensors, text, is_train=False)
+            _, preds = net(img_tensors, text, is_train=False)
 
             preds_index = tf.argmax(preds, axis=-1)
             preds_str = converter.decode(preds_index, length_for_pred)

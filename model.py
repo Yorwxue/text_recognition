@@ -32,7 +32,7 @@ class Model(tf.keras.Model):
             ])
         else:
             print('No SequenceModeling module specified')
-            self.SequenceModeling_output = self.FeatureExtraction_output
+            self.SequenceModeling = self.FeatureExtraction_output
 
         # Prediction
         if self.stages["Pred"] == 'Attn':
@@ -43,10 +43,10 @@ class Model(tf.keras.Model):
     def call(self, input, text, is_train=False):
         # Transformation
         if self.stages["Trans"] == "TPS":
-            input = self.Transformation(input)
+            trans_input = self.Transformation(input)
 
         # FeatureExtraction
-        visual_feature = self.FeatureExtraction(input)
+        visual_feature = self.FeatureExtraction(trans_input)
         visual_feature = tf.transpose(visual_feature, (0, 2, 3, 1))  # [b, h, w, c] -> [b, w, c, h]
         visual_feature = tf.squeeze(visual_feature, axis=-1)  # cause h = 1
 
@@ -57,4 +57,4 @@ class Model(tf.keras.Model):
         prediction = self.Prediction(contextual_feature, text, is_train,
                                      batch_max_length=self.args.batch_max_length)
 
-        return prediction
+        return trans_input, prediction
