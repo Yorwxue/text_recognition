@@ -113,18 +113,18 @@ if __name__ == "__main__":
                     # cv2.imwrite("in.jpg", np.asarray(image_tensors[0], np.int))
                     # cv2.imwrite("out.jpg", np.asarray(trans[0], np.int))
 
-            gradients = tape.gradient(losses, net.trainable_variables)
             loss = tf.nn.compute_average_loss(losses)
 
             # training strategy
             #########################################
             # 1. Freeze parameters of Transformation net
-            if loss > 5:
-                trainable_variables = list()
+            if loss > 20:
+                gradients = tape.gradient(losses, net.trainable_variables[8:])
                 optimizer.apply_gradients(zip(gradients, net.trainable_variables[8:]))  # without Transformation
 
             # 2. Apply gradients to all net
             else:
+                gradients = tape.gradient(losses, net.trainable_variables)
                 optimizer.apply_gradients(zip(gradients, net.trainable_variables))
             #########################################
 
