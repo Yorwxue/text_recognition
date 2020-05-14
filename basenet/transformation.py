@@ -260,7 +260,7 @@ if __name__ == "__main__":
     from PIL import Image
     from utils.img_utils import ratioImputation
 
-    F = 20  # number of focal points
+    F = 20  # number of fiducial points
     imgH, imgW = 32, 100
     # x = np.random.uniform(0, 255, size=(1, imgH, imgW, 1))
     image_path = os.path.abspath("../images/114_Spencerian_73323.jpg")

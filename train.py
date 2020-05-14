@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 import re
 import datetime
+import cv2
 
 from model import Model
 from utils.Dataloader import MJSynthDataset
@@ -28,7 +29,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=1, help='learning rate, default=1.0 for Adadelta')
     parser.add_argument('--rho', type=float, default=0.95, help='decay rate rho for Adadelta. default=0.95')
     parser.add_argument('--eps', type=float, default=1e-8, help='eps for Adadelta. default=1e-8')
-    parser.add_argument('--epochs', type=int, default=100000, help='number of epochs')
+    parser.add_argument('--epochs', type=int, default=300000, help='number of epochs')
     # Model Architecture
     parser.add_argument('--character', type=str, default='./config/character', help='path to definition of character label')
     parser.add_argument('--imgH', type=int, default=32, help='the height of the input image')
@@ -60,15 +61,6 @@ if __name__ == "__main__":
     args.num_class = len(converter.character)
 
     net = Model(args)
-
-    # loss
-    if 'CTC' in args.Prediction:
-        loss_fn = tf.nn.ctc_loss
-    else:
-        loss_fn = tf.nn.softmax_cross_entropy_with_logits  # TODO: ignore [B] token = ignore index 0
-
-    # filtered_parameters
-    # TODO
 
     # optimizer
     optimizer = tf.keras.optimizers.Adadelta(learning_rate=args.lr, rho=args.rho, epsilon=args.eps)
@@ -103,15 +95,32 @@ if __name__ == "__main__":
                 text, length = converter.encode(decoded_labels, batch_max_length=args.batch_max_length)
 
                 if 'CTC' in args.Prediction:
+                    # tf.nn.ctc_loss
                     raise NotImplementedError
                 else:
-                    trans, preds = net(image_tensors, text[:, :-1], is_train=False)  # align with Attention.forward
+                    trans, preds = net(image_tensors, text[:, :-1], is_train=True)  # align with Attention.forward
                     target = text[:, 1:]  # without [B] Symbol
-                    losses = loss_fn(tf.one_hot(target, args.num_class), preds)
+                    target_onehot = tf.one_hot(target, args.num_class)
+
+                    # ignore [B] token => ignore index 0
+                    mask = (target != 0)
+                    losses = tf.nn.softmax_cross_entropy_with_logits(target_onehot, preds)
+                    losses = tf.where(mask, losses, tf.zeros_like(losses))
 
                     # save transformed image
                     # cv2.imwrite("in.jpg", np.asarray(image_tensors[0], np.int))
                     # cv2.imwrite("out.jpg", np.asarray(trans[0], np.int))
+
+                    # show result
+                    # target_idx = tf.argmax(target_onehot, axis=-1)
+                    # preds_index = tf.argmax(preds, axis=-1)
+                    # batch_size = tf.shape(preds)[0]
+                    # length_for_pred = tf.zeros((batch_size, args.batch_max_length))
+                    # preds_str = converter.decode(preds_index, length_for_pred)
+                    # target_str = converter.decode(target_idx, length_for_pred)
+                    # for idx in range(batch_size):
+                    #     filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
+                    #     print("%s, target: %s, pred: %s, length: %d" % (filename, target_str[idx], preds_str[idx], len(preds_str[idx].replace("[B]", "B").replace("[E]", "E"))))
 
             loss = tf.nn.compute_average_loss(losses)
 
