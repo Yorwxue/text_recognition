@@ -7,7 +7,7 @@ import cv2
 
 from model import Model
 from utils.Dataloader import RawDataset
-from utils.label_converter import AttnLabelConverter
+from utils.label_converter import AttnLabelConverter, CTCLabelConverter
 
 
 if __name__ == "__main__":
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     parser.add_argument('--Transformation', type=str, default="TPS", help='Transformation stage. None|TPS')
     parser.add_argument('--FeatureExtraction', type=str, default="ResNet", help='FeatureExtraction stage. VGG|RCNN|ResNet')
     parser.add_argument('--SequenceModeling', type=str, default="BiLSTM", help='SequenceModeling stage. None|BiLSTM')
-    parser.add_argument('--Prediction', type=str, default="Attn", help='Prediction stage. CTC|Attn')
+    parser.add_argument('--Prediction', type=str, default="CTC", help='Prediction stage. CTC|Attn')
     parser.add_argument('--input_channel', type=int, default=3, help='the number of input channel of Feature extractor')
     parser.add_argument('--output_channel', type=int, default=512, help='the number of output channel of Feature extractor')
     parser.add_argument('--hidden_size', type=int, default=256, help='the size of the LSTM hidden state')
@@ -40,7 +40,8 @@ if __name__ == "__main__":
             character = fr.readline()
             character = character.replace("\n", "")
         if 'CTC' in args.Prediction:
-            raise NotImplementedError
+            converter = CTCLabelConverter(character)
+            # raise NotImplementedError
         else:
             converter = AttnLabelConverter(character)
 
@@ -65,7 +66,13 @@ if __name__ == "__main__":
             img_tensors, paths = data
             paths = np.asarray(paths)
             batch_size = np.shape(img_tensors)[0]
-            length_for_pred = tf.zeros((batch_size, args.batch_max_length))
+
+            if "Attn" in args.Prediction:
+                length_for_pred = tf.zeros((batch_size, args.batch_max_length), dtype=tf.int32)
+            elif "CTC" in args.Prediction:
+                length_for_pred = tf.multiply(tf.ones(batch_size, dtype=tf.int32), args.batch_max_length + 1)
+            else:
+                raise NotImplementedError
 
             # # show image
             # img = np.asarray(img)

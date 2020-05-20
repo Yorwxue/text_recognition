@@ -165,7 +165,12 @@ if __name__ == "__main__":
 
                 batch_size = np.shape(data[0])[0]
                 preds_index = tf.argmax(preds, axis=-1)
-                length_for_pred = tf.multiply(tf.ones(batch_size, dtype=tf.int32), args.batch_max_length+1)
+                if "Attn" in args.Prediction:
+                    length_for_pred = tf.zeros((batch_size, args.batch_max_length), dtype=tf.int32)
+                elif "CTC" in args.Prediction:
+                    length_for_pred = tf.multiply(tf.ones(batch_size, dtype=tf.int32), args.batch_max_length+1)
+                else:
+                    raise NotImplementedError
                 preds_str = converter.decode(preds_index, length_for_pred)
                 log = "epoch_%d, batch_(%d, %d)" % (epoch_idx, batch_idx, (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0))
                 for idx in range(batch_size):
