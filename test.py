@@ -85,8 +85,11 @@ if __name__ == "__main__":
             text = tf.zeros((batch_size, args.batch_max_length + 1))
             trans, preds = net(img_tensors, text, is_train=False)
 
-            preds_index = tf.argmax(preds, axis=-1)
-            preds_str = converter.decode(preds_index, length_for_pred)
+            if "Attn" in args.Prediction:
+                preds_index = tf.argmax(preds, axis=-1)
+                preds_str = converter.decode(preds_index, length_for_pred)
+            elif "CTC" in args.Prediction:
+                preds_str = converter.decode(preds, length_for_pred)
             for idx in range(batch_size):
                 # https://docs.python.org/3/library/re.html
                 filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)

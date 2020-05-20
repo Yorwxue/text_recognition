@@ -86,15 +86,18 @@ class CTCLabelConverter(object):
 
         return batch_text, length
 
-    def decode(self, text_index, length):
+    def decode(self, logits, length):
         """ convert text-index into text-label. """
+        logits_ctc = tf.transpose(logits, (1, 0, 2))
+        decoded, log_prob = tf.nn.ctc_beam_search_decoder(logits_ctc, length)
+        dense_decoded = tf.sparse.to_dense(decoded[0], default_value=-1)
+
         texts = []
-        for idx, l in enumerate(length):
-            t = text_index[idx]
-            char_list = []
-            for i in range(l):
-                if t[i] != 0 and (not (i > 0 and t[i - 1] == t[i])):  # removing repeated characters and blank.
-                    char_list.append(self.character[t[i]])
+        for idx, text_index in enumerate(dense_decoded):
+            char_list = list()
+            for char in text_index:
+                if char != 0:
+                    char_list.append(self.character[char])
             text = ''.join(char_list)
 
             texts.append(text)
