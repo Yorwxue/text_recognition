@@ -52,10 +52,12 @@ class ResNet(tf.keras.Model):
         h = self.Block_2(h)
         h = self.Conv_4(h)
         h = self.Pool_3(h)
+        h = tf.keras.layers.ZeroPadding2D(padding=(0, 1))(h)
         h = self.Block_3(h)
         h = self.Conv_5(h)
         h = self.Block_4(h)
         h = self.Conv_6(h)
+        h = tf.keras.layers.ZeroPadding2D(padding=(0, 1))(h)
         y = self.Conv_7(h)
         return y
 

@@ -8,7 +8,7 @@ import cv2
 
 from model import Model
 from utils.Dataloader import MJSynthDataset
-from utils.label_converter import AttnLabelConverter
+from utils.label_converter import AttnLabelConverter, CTCLabelConverter
 
 
 if __name__ == "__main__":
@@ -20,9 +20,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--test_folder', default='./images/', type=str, help='folder path to input images')
     # Training Parameter
+    parser.add_argument('--pretrained', type=bool, default=False, help='fine-tune from pre-trained model')
     parser.add_argument('--batch_max_length', type=int, default=25, help='maximum-label-length')
     parser.add_argument('--learning_rate', type=float, default=0.0001)
-    parser.add_argument('--batch_size', type=int, default=128)  # batch size for training
+    parser.add_argument('--batch_size', type=int, default=50)  # batch size for training
     parser.add_argument('--iterations', '--iter', type=int, default=100000)
     parser.add_argument('--weight_dir', type=str, default=r"./weights/", help="directory to save model weights")
     parser.add_argument('--log_dir', type=str, default=r"./logs/", help="directory to save logs")
@@ -38,7 +39,9 @@ if __name__ == "__main__":
     parser.add_argument('--Transformation', type=str, default="TPS", help='Transformation stage. None|TPS')
     parser.add_argument('--FeatureExtraction', type=str, default="ResNet", help='FeatureExtraction stage. VGG|RCNN|ResNet')
     parser.add_argument('--SequenceModeling', type=str, default="BiLSTM", help='SequenceModeling stage. None|BiLSTM')
-    parser.add_argument('--Prediction', type=str, default="Attn", help='Prediction stage. CTC|Attn')
+
+    parser.add_argument('--Prediction', type=str, default="CTC", help='Prediction stage. CTC|Attn')
+
     parser.add_argument('--input_channel', type=int, default=3, help='the number of input channel of Feature extractor')
     parser.add_argument('--output_channel', type=int, default=512, help='the number of output channel of Feature extractor')
     parser.add_argument('--hidden_size', type=int, default=256, help='the size of the LSTM hidden state')
@@ -55,7 +58,8 @@ if __name__ == "__main__":
         character = fr.readline()
         character = character.replace("\n", "")
     if 'CTC' in args.Prediction:
-        raise NotImplementedError
+        converter = CTCLabelConverter(character)
+        # raise NotImplementedError
     else:
         converter = AttnLabelConverter(character)
     args.num_class = len(converter.character)
@@ -74,6 +78,13 @@ if __name__ == "__main__":
         os.makedirs(args.weight_dir)
     # checkpoint_dir = os.path.join(args.weight_dir, "ckpt")
     # checkpoint_prefix = os.path.abspath(checkpoint_dir)
+
+    # model restore
+    # if args.pretrained:
+    #     checkpoint_dir = tf.train.latest_checkpoint(args.weight_dir)
+    #     # checkpoint_dir = os.path.join(args.weight_dir, "ckpt-10")
+    #     checkpoint.restore(checkpoint_dir)
+    #     print("Restored from %s" % checkpoint_dir)
 
     # dataset
     filenames = os.listdir(args.test_folder)
@@ -95,8 +106,11 @@ if __name__ == "__main__":
                 text, length = converter.encode(decoded_labels, batch_max_length=args.batch_max_length)
 
                 if 'CTC' in args.Prediction:
-                    # tf.nn.ctc_loss
-                    raise NotImplementedError
+                    trans, preds = net(image_tensors, text)
+
+                    # ignore [B] token => ignore index 0
+                    losses = tf.nn.ctc_loss(text, preds, length, tf.multiply(tf.ones(args.batch_size), args.batch_max_length), logits_time_major=False, blank_index=0)
+                    # raise NotImplementedError
                 else:
                     trans, preds = net(image_tensors, text[:, :-1], is_train=True)  # align with Attention.forward
                     target = text[:, 1:]  # without [B] Symbol
@@ -127,7 +141,7 @@ if __name__ == "__main__":
             # training strategy
             #########################################
             # 1. Freeze parameters of Transformation net
-            if loss > 20:
+            if loss > 1:
                 gradients = tape.gradient(losses, net.trainable_variables[8:])
                 optimizer.apply_gradients(zip(gradients, net.trainable_variables[8:]))  # without Transformation
 
@@ -151,7 +165,7 @@ if __name__ == "__main__":
 
                 batch_size = np.shape(data[0])[0]
                 preds_index = tf.argmax(preds, axis=-1)
-                length_for_pred = tf.zeros((batch_size, args.batch_max_length), dtype=tf.int32)
+                length_for_pred = tf.multiply(tf.ones(batch_size, dtype=tf.int32), args.batch_max_length+1)
                 preds_str = converter.decode(preds_index, length_for_pred)
                 log = "epoch_%d, batch_(%d, %d)" % (epoch_idx, batch_idx, (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0))
                 for idx in range(batch_size):

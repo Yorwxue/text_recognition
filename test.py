@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import tensorflow as tf
 import re
+import cv2
 
 from model import Model
 from utils.Dataloader import RawDataset
@@ -59,6 +60,7 @@ if __name__ == "__main__":
         raw_data = raw_data.batch(args.batch_size)
         raw_data = raw_data.prefetch(tf.data.experimental.AUTOTUNE)
 
+        counter = 1
         for data in raw_data:
             img_tensors, paths = data
             paths = np.asarray(paths)
@@ -74,7 +76,7 @@ if __name__ == "__main__":
             # cv2.waitKey(3000)
 
             text = tf.zeros((batch_size, args.batch_max_length + 1))
-            _, preds = net(img_tensors, text, is_train=False)
+            trans, preds = net(img_tensors, text, is_train=False)
 
             preds_index = tf.argmax(preds, axis=-1)
             preds_str = converter.decode(preds_index, length_for_pred)
@@ -82,3 +84,5 @@ if __name__ == "__main__":
                 # https://docs.python.org/3/library/re.html
                 filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
                 print("%s, text: %s, length: %d" % (filename, preds_str[idx], len(preds_str[idx].replace("[B]", "B").replace("[E]", "E"))))
+                cv2.imwrite("out_%d.jpg" % counter, np.asarray(trans[idx], np.int))
+                counter += 1

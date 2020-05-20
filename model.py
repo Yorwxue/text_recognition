@@ -37,6 +37,8 @@ class Model(tf.keras.Model):
         # Prediction
         if self.stages["Pred"] == 'Attn':
             self.Prediction = Attention(args.hidden_size, args.num_class)
+        elif self.stages["Pred"] == 'CTC':
+            self.Prediction = tf.keras.layers.Dense(args.num_class)
         else:
             raise NotImplementedError
 
@@ -44,6 +46,8 @@ class Model(tf.keras.Model):
         # Transformation
         if self.stages["Trans"] == "TPS":
             trans_input = self.Transformation(input)
+        else:
+            raise NotImplementedError
 
         # FeatureExtraction
         visual_feature = self.FeatureExtraction(trans_input)
@@ -54,7 +58,11 @@ class Model(tf.keras.Model):
         contextual_feature = self.SequenceModeling(visual_feature)
 
         # Prediction
-        prediction = self.Prediction(contextual_feature, text, is_train,
-                                     batch_max_length=self.args.batch_max_length)
+        if self.stages["Pred"] == 'Attn':
+            prediction = self.Prediction(contextual_feature, text, is_train, batch_max_length=self.args.batch_max_length)
+        elif self.stages["Pred"] == 'CTC':
+            prediction = self.Prediction(contextual_feature)
+        else:
+            raise NotImplementedError
 
         return trans_input, prediction
