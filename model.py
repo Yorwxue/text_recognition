@@ -47,11 +47,14 @@ class Model(tf.keras.Model):
         if self.stages["Trans"] == "TPS":
             trans_input = self.Transformation(input)
         else:
-            raise NotImplementedError
+            trans_input = input
+            # raise NotImplementedError
 
         # FeatureExtraction
         visual_feature = self.FeatureExtraction(trans_input)
+        # batch_size, height, width, channels = tf.shape(visual_feature)
         visual_feature = tf.transpose(visual_feature, (0, 2, 3, 1))  # [b, h, w, c] -> [b, w, c, h]
+        # visual_feature = tf.reshape(visual_feature, (batch_size, width, height * channels))  # if h != 1
         visual_feature = tf.squeeze(visual_feature, axis=-1)  # cause h = 1
 
         # Sequence modeling

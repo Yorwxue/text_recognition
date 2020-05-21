@@ -20,14 +20,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--test_folder', default='./images/', type=str, help='folder path to input images')
     # Training Parameter
-    parser.add_argument('--pretrained', type=bool, default=False, help='fine-tune from pre-trained model')
+    parser.add_argument('--pretrained', type=bool, default=False, help='fine-tune from pre-trained model')              # start from pre-trained model
     parser.add_argument('--batch_max_length', type=int, default=25, help='maximum-label-length')
     parser.add_argument('--learning_rate', type=float, default=0.0001)
-    parser.add_argument('--batch_size', type=int, default=50)  # batch size for training
+    parser.add_argument('--batch_size', type=int, default=100)  # batch size for training
     parser.add_argument('--iterations', '--iter', type=int, default=100000)
     parser.add_argument('--weight_dir', type=str, default=r"./weights/", help="directory to save model weights")
     parser.add_argument('--log_dir', type=str, default=r"./logs/", help="directory to save logs")
-    parser.add_argument('--lr', type=float, default=1, help='learning rate, default=1.0 for Adadelta')
+
+    parser.add_argument('--lr', type=float, default=1e-3, help='learning rate, default=1.0 for Adadelta')               # 1e-3 for CTC, 1 for Attn
+
     parser.add_argument('--rho', type=float, default=0.95, help='decay rate rho for Adadelta. default=0.95')
     parser.add_argument('--eps', type=float, default=1e-8, help='eps for Adadelta. default=1e-8')
     parser.add_argument('--epochs', type=int, default=300000, help='number of epochs')
@@ -40,9 +42,9 @@ if __name__ == "__main__":
     parser.add_argument('--FeatureExtraction', type=str, default="ResNet", help='FeatureExtraction stage. VGG|RCNN|ResNet')
     parser.add_argument('--SequenceModeling', type=str, default="BiLSTM", help='SequenceModeling stage. None|BiLSTM')
 
-    parser.add_argument('--Prediction', type=str, default="CTC", help='Prediction stage. CTC|Attn')
+    parser.add_argument('--Prediction', type=str, default="CTC", help='Prediction stage. CTC|Attn')                     # CTC or Attn
 
-    parser.add_argument('--input_channel', type=int, default=3, help='the number of input channel of Feature extractor')
+    parser.add_argument('--input_channel', type=int, default=1, help='the number of input channel of Feature extractor')
     parser.add_argument('--output_channel', type=int, default=512, help='the number of output channel of Feature extractor')
     parser.add_argument('--hidden_size', type=int, default=256, help='the size of the LSTM hidden state')
     args = parser.parse_args()
@@ -109,7 +111,7 @@ if __name__ == "__main__":
                     trans, preds = net(image_tensors, text)
 
                     # ignore [B] token => ignore index 0
-                    losses = tf.nn.ctc_loss(text, preds, length, tf.multiply(tf.ones(args.batch_size), args.batch_max_length), logits_time_major=False, blank_index=0)
+                    losses = tf.nn.ctc_loss(text, preds, length, tf.multiply(tf.ones(tf.shape(preds)[0]), args.batch_max_length), logits_time_major=False, blank_index=0)
                     # raise NotImplementedError
                 else:
                     trans, preds = net(image_tensors, text[:, :-1], is_train=True)  # align with Attention.forward
@@ -151,7 +153,9 @@ if __name__ == "__main__":
                 optimizer.apply_gradients(zip(gradients, net.trainable_variables))
             #########################################
 
-            print("epoch_index: %d, batch_index: (%d, %d), loss: " % (epoch_idx, batch_idx, (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0)), loss)
+            print("epoch_index: %d, batch_index: (%d, %d), loss: " % (
+                epoch_idx, batch_idx,
+                (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0)), loss)
 
             if batch_idx % 50 == 0:
                 # checkpoint.save(checkpoint_prefix)
@@ -164,10 +168,12 @@ if __name__ == "__main__":
                     # tf.summary.trace_export(name="func_trace", step=0, profiler_outdir=args.log_dir)
 
                 batch_size = np.shape(data[0])[0]
-                preds_index = tf.argmax(preds, axis=-1)
+
                 if "Attn" in args.Prediction:
+                    preds_index = tf.argmax(preds, axis=-1)
                     length_for_pred = tf.zeros((batch_size, args.batch_max_length), dtype=tf.int32)
                 elif "CTC" in args.Prediction:
+                    preds_index = preds
                     length_for_pred = tf.multiply(tf.ones(batch_size, dtype=tf.int32), args.batch_max_length+1)
                 else:
                     raise NotImplementedError

@@ -88,7 +88,7 @@ class CTCLabelConverter(object):
 
     def decode(self, logits, length):
         """ convert text-index into text-label. """
-        logits_ctc = tf.transpose(logits, (1, 0, 2))
+        logits_ctc = tf.transpose(logits, (1, 0, 2))  # Time major
         decoded, log_prob = tf.nn.ctc_beam_search_decoder(logits_ctc, length)
         dense_decoded = tf.sparse.to_dense(decoded[0], default_value=-1)
 
