@@ -4,10 +4,17 @@ import numpy as np
 import tensorflow as tf
 import re
 import cv2
+import datetime
 
 from model import Model
 from utils.Dataloader import RawDataset
 from utils.label_converter import AttnLabelConverter, CTCLabelConverter
+from utils.accuracy import accuracy_match
+
+# @tf.function
+# def trace_func(net, x):
+#     img_tensors, text, is_train = x
+#     return net(img_tensors, text, is_train=is_train)
 
 
 if __name__ == "__main__":
@@ -34,7 +41,16 @@ if __name__ == "__main__":
     parser.add_argument('--hidden_size', type=int, default=256, help='the size of the LSTM hidden state')
     args = parser.parse_args()
 
+    # log configure
+    log_filename = "test_%s.txt" % datetime.datetime.now().strftime("%Y_%m_%d")
+    log_dir = os.path.join(args.log_dir, "test")
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    summary_writer = tf.summary.create_file_writer(log_dir)
+    tf.summary.trace_on(graph=True, profiler=True)
+
     with tf.device('/cpu:0'):
+
         # model configuration
         with open(args.character, "r") as fr:
             character = fr.readline()
@@ -62,10 +78,12 @@ if __name__ == "__main__":
         raw_data = raw_data.prefetch(tf.data.experimental.AUTOTUNE)
 
         counter = 1
+        gts_list, preds_list, trans_list = list(), list(), list()
         for data in raw_data:
             img_tensors, paths = data
             paths = np.asarray(paths)
             batch_size = np.shape(img_tensors)[0]
+            labels = [re.match("(.*)_(.*)_(.*)", str(path)).group(2) for path in paths]
 
             if "Attn" in args.Prediction:
                 length_for_pred = tf.zeros((batch_size, args.batch_max_length), dtype=tf.int32)
@@ -84,15 +102,34 @@ if __name__ == "__main__":
 
             text = tf.zeros((batch_size, args.batch_max_length + 1))
             trans, preds = net(img_tensors, text, is_train=False)
+            # trans, preds = trace_func(net, (img_tensors, text, False))
 
             if "Attn" in args.Prediction:
                 preds_index = tf.argmax(preds, axis=-1)
                 preds_str = converter.decode(preds_index, length_for_pred)
             elif "CTC" in args.Prediction:
                 preds_str = converter.decode(preds, length_for_pred)
-            for idx in range(batch_size):
-                # https://docs.python.org/3/library/re.html
-                filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
-                print("%s, text: %s, length: %d" % (filename, preds_str[idx], len(preds_str[idx].replace("[B]", "B").replace("[E]", "E"))))
-                cv2.imwrite("out_%d.jpg" % counter, np.asarray(trans[idx], np.int))
-                counter += 1
+
+            preds_list.extend(preds_str)
+            gts_list.extend(labels)
+            trans_list.extend(trans)
+
+            # for idx in range(batch_size):
+            #     # https://docs.python.org/3/library/re.html
+            #     filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
+            #     print("%s, text: %s, length: %d" % (filename, preds_str[idx], len(preds_str[idx].replace("[B]", "B").replace("[E]", "E"))))
+            #     cv2.imwrite("out_%d.jpg" % counter, np.asarray(trans[idx], np.int))
+            #     counter += 1
+
+        # calculate accuracy
+        print("accuracy: %f" % accuracy_match(gts_list, preds_list))
+
+        for idx in range(len(gts_list)):
+            print("label: %s, text: %s, length: %d" % (gts_list[idx], preds_list[idx], len(preds_list[idx])))
+            cv2.imwrite("out_%d.jpg" % counter, np.asarray(trans_list[idx], np.int))
+            counter += 1
+
+        # log
+        with summary_writer.as_default():
+            tf.summary.trace_export(name="func_trace", step=0, profiler_outdir=log_dir)
+        print("ok")

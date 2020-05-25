@@ -1,3 +1,7 @@
+##########################################################################
+# TODO: Train by CTC at first, and using the net to fine-tune Attention model
+##########################################################################
+
 import os
 import argparse
 import numpy as np
@@ -9,7 +13,6 @@ import cv2
 from model import Model
 from utils.Dataloader import MJSynthDataset
 from utils.label_converter import AttnLabelConverter, CTCLabelConverter
-from utils.accuracy import accuracy_match
 
 
 if __name__ == "__main__":
@@ -21,14 +24,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--test_folder', default='./images/', type=str, help='folder path to input images')
     # Training Parameter
-    parser.add_argument('--pretrained', type=bool, default=True, help='fine-tune from pre-trained model')              # start from pre-trained model
+    parser.add_argument('--pretrained', type=bool, default=False, help='fine-tune from pre-trained model')              # start from pre-trained model
     parser.add_argument('--batch_max_length', type=int, default=25, help='maximum-label-length')
     parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--batch_size', type=int, default=100)  # batch size for training
     parser.add_argument('--iterations', '--iter', type=int, default=100000)
     parser.add_argument('--weight_dir', type=str, default=r"./weights/", help="directory to save model weights")
     parser.add_argument('--log_dir', type=str, default=r"./logs/", help="directory to save logs")
-    parser.add_argument('--valid_size', type=int, default=100, help="size of validation dataset")
 
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate, default=1.0 for Adadelta')               # 1e-3 for CTC, 1 for Attn
 
@@ -44,7 +46,7 @@ if __name__ == "__main__":
     parser.add_argument('--FeatureExtraction', type=str, default="ResNet", help='FeatureExtraction stage. VGG|RCNN|ResNet')
     parser.add_argument('--SequenceModeling', type=str, default="BiLSTM", help='SequenceModeling stage. None|BiLSTM')
 
-    parser.add_argument('--Prediction', type=str, default="CTC", help='Prediction stage. CTC|Attn')                     # CTC or Attn
+    # parser.add_argument('--Prediction', type=str, default="CTC", help='Prediction stage. CTC|Attn')                     # CTC or Attn
 
     parser.add_argument('--input_channel', type=int, default=1, help='the number of input channel of Feature extractor')
     parser.add_argument('--output_channel', type=int, default=512, help='the number of output channel of Feature extractor')
@@ -85,14 +87,13 @@ if __name__ == "__main__":
     # checkpoint_prefix = os.path.abspath(checkpoint_dir)
 
     # model restore
-    if args.pretrained:
-        checkpoint_dir = tf.train.latest_checkpoint(args.weight_dir)
-        # checkpoint_dir = os.path.join(args.weight_dir, "ckpt-10")
-        checkpoint.restore(checkpoint_dir)
-        print("Restored from %s" % checkpoint_dir)
+    # if args.pretrained:
+    #     checkpoint_dir = tf.train.latest_checkpoint(args.weight_dir)
+    #     # checkpoint_dir = os.path.join(args.weight_dir, "ckpt-10")
+    #     checkpoint.restore(checkpoint_dir)
+    #     print("Restored from %s" % checkpoint_dir)
 
     # dataset
-    print("Preparing training data ..")
     filenames = os.listdir(args.test_folder)
     # https://heartbeat.fritz.ai/building-a-data-pipeline-with-tensorflow-3047656b5095
     root_path = os.path.abspath(os.path.join("./dataset/mnt", "ramdisk/max/90kDICT32px"))
@@ -104,17 +105,7 @@ if __name__ == "__main__":
     dataset = dataset.batch(args.batch_size)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
-    # valid dataset
-    print("Preparing validation data ..")
-    with open(os.path.join(root_path, "annotation_val.txt"), "r") as fr:
-        raw_valid_data = fr.readlines()
-    valid_image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", image_path).group(1)) for image_path in raw_valid_data]
-    valid_dataset = MJSynthDataset(valid_image_path_list, (32, 100, args.input_channel), limitation=args.valid_size)
-    valid_dataset = valid_dataset.batch(args.batch_size)
-    valid_dataset = valid_dataset.prefetch(tf.data.experimental.AUTOTUNE)
-
     counter = 0
-    print("Start training ..")
     for epoch_idx in range(args.epochs):
         for batch_idx, data in enumerate(dataset):
             with tf.GradientTape() as tape:
@@ -168,59 +159,9 @@ if __name__ == "__main__":
                 optimizer.apply_gradients(zip(gradients, net.trainable_variables))
             #########################################
 
-            # validation
-            # """###################################################################
-            valid_gts_list, valid_preds_list, valid_trans_list = list(), list(), list()
-            for valid_data in valid_dataset:
-                valid_image_tensors, valid_labels, valid_paths = valid_data
-                valid_decoded_labels = [[char.decode("utf-8") for char in np.asarray(label)] for label in valid_labels]
-                valid_text, valid_length = converter.encode(valid_decoded_labels, batch_max_length=args.batch_max_length)
-                valid_paths = np.asarray(valid_paths)
-                valid_batch_size = np.shape(valid_image_tensors)[0]
-                valid_labels = [re.match("(.*)_(.*)_(.*)", str(valid_path)).group(2) for valid_path in valid_paths]
-
-                if "Attn" in args.Prediction:
-                    valid_length_for_pred = tf.zeros((valid_batch_size, args.batch_max_length), dtype=tf.int32)
-                elif "CTC" in args.Prediction:
-                    valid_length_for_pred = tf.multiply(tf.ones(valid_batch_size, dtype=tf.int32), args.batch_max_length + 1)
-
-                # prediction
-                ###############
-                if 'CTC' in args.Prediction:
-                    valid_trans, valid_preds = net(valid_image_tensors, valid_text)
-
-                    # ignore [B] token => ignore index 0
-                    valid_losses = tf.nn.ctc_loss(valid_text, valid_preds, valid_length,
-                                            tf.multiply(tf.ones(tf.shape(valid_preds)[0]), args.batch_max_length),
-                                            logits_time_major=False, blank_index=0)
-                else:
-                    valid_trans, valid_preds = net(valid_image_tensors, valid_text[:, :-1], is_train=True)  # align with Attention.forward
-                    valid_target = valid_text[:, 1:]  # without [B] Symbol
-                    valid_target_onehot = tf.one_hot(valid_target, args.num_class)
-
-                    # ignore [B] token => ignore index 0
-                    valid_mask = (target != 0)
-                    valid_losses = tf.nn.softmax_cross_entropy_with_logits(valid_target_onehot, valid_preds)
-                    valid_losses = tf.where(valid_mask, valid_losses, tf.zeros_like(valid_losses))
-                ###############
-
-                if "Attn" in args.Prediction:
-                    valid_preds_index = tf.argmax(valid_preds, axis=-1)
-                    valid_preds_str = converter.decode(valid_preds_index, valid_length_for_pred)
-                elif "CTC" in args.Prediction:
-                    valid_preds_str = converter.decode(valid_preds, valid_length_for_pred)
-                valid_preds_list.extend(valid_preds_str)
-                valid_gts_list.extend(valid_labels)
-                valid_trans_list.extend(valid_trans)
-
-            accuracy = accuracy_match(valid_gts_list, valid_preds_str)
-            valid_loss = tf.nn.compute_average_loss(valid_losses)
-            ####################################################################"""
-
-            print("epoch_index: %d, batch_index: (%d, %d), train_loss: %f, valid_loss: %f" % (
+            print("epoch_index: %d, batch_index: (%d, %d), loss: " % (
                 epoch_idx, batch_idx,
-                (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0),
-                loss, valid_loss))
+                (total_data_size//args.batch_size) + (1 if total_data_size%args.batch_size > 0 else 0)), loss)
 
             if batch_idx % 50 == 0:
                 # checkpoint.save(checkpoint_prefix)

@@ -78,12 +78,18 @@ class MJSynthDataset(tf.data.Dataset):
             yield (img, [label], [image_path])
 
     # def __new__(cls, root, shape):
-    def __new__(cls, image_path_list, shape):
+    def __new__(cls, image_path_list, shape, limitation=None):
+        """
+
+        :param image_path_list:
+        :param shape:
+        :param limitation: limitation of total number of dataset
+        """
         imgH, imgW, ch = shape
 
-        # only for code testing
         ##########################################
-        # image_path_list = image_path_list[:5000]
+        if limitation:
+            image_path_list = image_path_list[:limitation]
         ##########################################
 
         image_path_list = natsorted(image_path_list)
@@ -106,7 +112,7 @@ if __name__ == "__main__":
 
     # root = os.path.abspath("../dataset/mnt")
     # dataset = MJSynthDataset(root, (32, 100, 3))
-    root_path = os.path.abspath(os.path.join("./dataset/mnt", "ramdisk/max/90kDICT32px"))
+    root_path = os.path.abspath(os.path.join("../dataset/mnt", "ramdisk/max/90kDICT32px"))
     with open(os.path.join(root_path, "annotation_train.txt"), "r") as fr:
         raw_data = fr.readlines()
     image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", raw_data[0]).group(1)) for image_path in raw_data]
@@ -121,7 +127,7 @@ if __name__ == "__main__":
             try:
                 label = np.asarray(labels[idx])[0]
                 # label = ("".join([char.decode("utf-8") for char in label])).replace("[B]", "").replace("[E]", "")
-                label = label[0].decode("utf-8")
+                label = label.decode("utf-8")
                 np_img = cv2.cvtColor(np.asarray(imgs[idx]), cv2.COLOR_RGB2BGR)
                 cv2.imwrite("../results/%d_%d_%s.jpg" % (batch_idx, idx, label), np_img)
             except Exception as e:
