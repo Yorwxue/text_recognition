@@ -7,18 +7,23 @@ import cv2
 import datetime
 
 from model import Model
-from utils.Dataloader import MJSynthDataset
+from utils.Dataloader import RawDataset
 from utils.label_converter import AttnLabelConverter, CTCLabelConverter
 from utils.accuracy import accuracy_match
+
+# @tf.function
+# def trace_func(net, x):
+#     img_tensors, text, is_train = x
+#     return net(img_tensors, text, is_train=is_train)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--test_folder', default="./dataset/mnt", type=str, help='folder path to input images')
+    parser.add_argument('--test_folder', default='./images/', type=str, help='folder path to input images')
     # Training Parameter
     parser.add_argument('--batch_max_length', type=int, default=25, help='maximum-label-length')
     parser.add_argument('--learning_rate', type=float, default=0.0001)
-    parser.add_argument('--batch_size', type=int, default=100)  # batch size for training
+    parser.add_argument('--batch_size', type=int, default=2)  # batch size for training
     parser.add_argument('--iterations', '--iter', type=int, default=100000)
     parser.add_argument('--weight_dir', type=str, default=r"./weights/", help="directory to save model weights")
     parser.add_argument('--log_dir', type=str, default=r"./logs/", help="directory to save logs")
@@ -66,24 +71,19 @@ if __name__ == "__main__":
         checkpoint.restore(checkpoint_dir)
         print("Restored from %s" % checkpoint_dir)
 
+        filenames = os.listdir(args.test_folder)
         # https://heartbeat.fritz.ai/building-a-data-pipeline-with-tensorflow-3047656b5095
-        root_path = os.path.abspath(os.path.join(args.test_folder, "ramdisk/max/90kDICT32px"))
-        with open(os.path.join(root_path, "annotation_test.txt"), "r") as fr:
-            raw_data = fr.readlines()
-        image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", image_path).group(1)) for image_path in raw_data]
-        total_data_size = len(image_path_list)
-        dataset = MJSynthDataset(image_path_list, (args.imgH, args.imgW, args.input_channel))
-        dataset = dataset.batch(args.batch_size)
-        dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+        raw_data = RawDataset(os.path.abspath("./images"), (args.imgH, args.imgW, args.input_channel))
+        raw_data = raw_data.batch(args.batch_size)
+        raw_data = raw_data.prefetch(tf.data.experimental.AUTOTUNE)
 
         counter = 1
         gts_list, preds_list, trans_list = list(), list(), list()
-        for batch_idx, data in enumerate(dataset):
-            image_tensors, labels, paths = data
-            labels_list = [label[0] for label in np.asarray(labels, dtype=str)]
+        for data in raw_data:
+            img_tensors, paths = data
             paths = np.asarray(paths)
-            batch_size = np.shape(image_tensors)[0]
-            decoded_labels = [re.match("(.*)_(.*)_(.*)", str(path)).group(2) for path in paths]
+            batch_size = np.shape(img_tensors)[0]
+            labels = [re.match("(.*)_(.*)_(.*)", str(path)).group(2) for path in paths]
 
             if "Attn" in args.Prediction:
                 length_for_pred = tf.zeros((batch_size, args.batch_max_length), dtype=tf.int32)
@@ -92,42 +92,28 @@ if __name__ == "__main__":
             else:
                 raise NotImplementedError
 
-            text, length = converter.encode(decoded_labels, batch_max_length=args.batch_max_length)
+            # # show image
+            # img = np.asarray(img)
+            # print(np.shape(img))
+            # if args.input_channel == 3:
+            #     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            # cv2.imshow("%d" % idx, img)
+            # cv2.waitKey(3000)
 
-            if 'CTC' in args.Prediction:
-                trans, preds = net(image_tensors, text)
+            text = tf.zeros((batch_size, args.batch_max_length + 1))
+            trans, preds = net(img_tensors, text, is_train=False)
+            # trans, preds = trace_func(net, (img_tensors, text, False))
 
-                # ignore [B] token => ignore index 0
-                losses = tf.nn.ctc_loss(text, preds, length,
-                                        tf.multiply(tf.ones(tf.shape(preds)[0]), args.batch_max_length),
-                                        logits_time_major=False, blank_index=0)
-                # raise NotImplementedError
-            else:
-                trans, preds = net(image_tensors, text[:, :-1], is_train=True)  # align with Attention.forward
-                target = text[:, 1:]  # without [B] Symbol
-                target_onehot = tf.one_hot(target, args.num_class)
-
-                # ignore [B] token => ignore index 0
-                mask = (target != 0)
-                losses = tf.nn.softmax_cross_entropy_with_logits(target_onehot, preds)
-                losses = tf.where(mask, losses, tf.zeros_like(losses))
-
-            # decode output string
             if "Attn" in args.Prediction:
                 preds_index = tf.argmax(preds, axis=-1)
                 preds_str = converter.decode(preds_index, length_for_pred)
             elif "CTC" in args.Prediction:
                 preds_str = converter.decode(preds, length_for_pred)
 
-            loss = tf.nn.compute_average_loss(losses)
-
             preds_list.extend(preds_str)
-            gts_list.extend(labels_list)
+            gts_list.extend(labels)
             trans_list.extend(trans)
 
-            print("batch_index: (%d, %d), loss: %f, accuracy: %f" % (batch_idx,
-                (total_data_size // args.batch_size) + (1 if total_data_size % args.batch_size > 0 else 0),
-                loss, accuracy_match(labels_list, preds_str)))
             # for idx in range(batch_size):
             #     # https://docs.python.org/3/library/re.html
             #     filename = re.match("(.*)/(.*)(\..*)", str(paths[idx][0])).group(2)
@@ -138,10 +124,10 @@ if __name__ == "__main__":
         # calculate accuracy
         print("accuracy: %f" % accuracy_match(gts_list, preds_list))
 
-        # for idx in range(len(gts_list)):
-        #     print("label: %s, text: %s, length: %d" % (gts_list[idx], preds_list[idx], len(preds_list[idx])))
-        #     cv2.imwrite("results/out_%d.jpg" % counter, np.asarray(trans_list[idx], np.int))
-        #     counter += 1
+        for idx in range(len(gts_list)):
+            print("label: %s, text: %s, length: %d" % (gts_list[idx], preds_list[idx], len(preds_list[idx])))
+            cv2.imwrite("results/out_%d.jpg" % counter, np.asarray(trans_list[idx], np.int))
+            counter += 1
 
         # log
         with summary_writer.as_default():

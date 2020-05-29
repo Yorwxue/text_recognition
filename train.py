@@ -100,7 +100,7 @@ if __name__ == "__main__":
         raw_data = fr.readlines()
     image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", image_path).group(1)) for image_path in raw_data]
     total_data_size = len(image_path_list)
-    dataset = MJSynthDataset(image_path_list, (32, 100, args.input_channel))
+    dataset = MJSynthDataset(image_path_list, (args.imgH, args.imgW, args.input_channel))
     dataset = dataset.batch(args.batch_size)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     with open(os.path.join(root_path, "annotation_val.txt"), "r") as fr:
         raw_valid_data = fr.readlines()
     valid_image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", image_path).group(1)) for image_path in raw_valid_data]
-    valid_dataset = MJSynthDataset(valid_image_path_list, (32, 100, args.input_channel), limitation=args.valid_size)
+    valid_dataset = MJSynthDataset(valid_image_path_list, (args.imgH, args.imgW, args.input_channel), limitation=args.valid_size)
     valid_dataset = valid_dataset.batch(args.batch_size)
     valid_dataset = valid_dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
