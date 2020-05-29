@@ -11,8 +11,10 @@ import datetime
 import cv2
 
 from model import Model
+from basenet.prediction import Attention
 from utils.Dataloader import MJSynthDataset
 from utils.label_converter import AttnLabelConverter, CTCLabelConverter
+from utils.accuracy import accuracy_match
 
 
 if __name__ == "__main__":
@@ -23,8 +25,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--test_folder', default='./images/', type=str, help='folder path to input images')
-    # Training Parameter
-    parser.add_argument('--pretrained', type=bool, default=False, help='fine-tune from pre-trained model')              # start from pre-trained model
+    # # Training Parameter
+    # parser.add_argument('--pretrained', type=bool, default=False, help='fine-tune from pre-trained model')              # start from pre-trained model
     parser.add_argument('--batch_max_length', type=int, default=25, help='maximum-label-length')
     parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--batch_size', type=int, default=100)  # batch size for training
@@ -53,6 +55,10 @@ if __name__ == "__main__":
     parser.add_argument('--hidden_size', type=int, default=256, help='the size of the LSTM hidden state')
     args = parser.parse_args()
 
+    had_transfer = False
+    threshold = 1  # gap between CTC and Attn
+    accuracy = 0
+
     # log configure
     log_filename = "train_%s.txt" % datetime.datetime.now().strftime("%Y_%m_%d")
     log_dir = os.path.join(args.log_dir, "train")
@@ -64,11 +70,11 @@ if __name__ == "__main__":
     with open(args.character, "r") as fr:
         character = fr.readline()
         character = character.replace("\n", "")
-    if 'CTC' in args.Prediction:
-        converter = CTCLabelConverter(character)
-        # raise NotImplementedError
-    else:
-        converter = AttnLabelConverter(character)
+
+    # if 'CTC' in args.Prediction:
+    converter = CTCLabelConverter(character)
+    # else:
+    #     converter = AttnLabelConverter(character)
     args.num_class = len(converter.character)
 
     net = Model(args)
@@ -87,14 +93,14 @@ if __name__ == "__main__":
     # checkpoint_prefix = os.path.abspath(checkpoint_dir)
 
     # model restore
-    # if args.pretrained:
-    #     checkpoint_dir = tf.train.latest_checkpoint(args.weight_dir)
-    #     # checkpoint_dir = os.path.join(args.weight_dir, "ckpt-10")
-    #     checkpoint.restore(checkpoint_dir)
-    #     print("Restored from %s" % checkpoint_dir)
+    if args.pretrained:
+        checkpoint_dir = tf.train.latest_checkpoint(args.weight_dir)
+        # checkpoint_dir = os.path.join(args.weight_dir, "ckpt-10")
+        checkpoint.restore(checkpoint_dir)
+        print("Restored from %s" % checkpoint_dir)
 
-    # dataset
-    filenames = os.listdir(args.test_folder)
+    # train dataset
+    # filenames = os.listdir(args.test_folder)
     # https://heartbeat.fritz.ai/building-a-data-pipeline-with-tensorflow-3047656b5095
     root_path = os.path.abspath(os.path.join("./dataset/mnt", "ramdisk/max/90kDICT32px"))
     with open(os.path.join(root_path, "annotation_train.txt"), "r") as fr:
@@ -104,6 +110,14 @@ if __name__ == "__main__":
     dataset = MJSynthDataset(image_path_list, (32, 100, args.input_channel))
     dataset = dataset.batch(args.batch_size)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+
+    # valid dataset
+    with open(os.path.join(root_path, "annotation_val.txt"), "r") as fr:
+        raw_valid_data = fr.readlines()
+    valid_image_path_list = [os.path.join(root_path, re.match("./(.*.jpg)(.*)", image_path).group(1)) for image_path in raw_valid_data]
+    valid_dataset = MJSynthDataset(valid_image_path_list, (32, 100, args.input_channel))
+    valid_dataset = valid_dataset.batch(args.batch_size)
+    valid_dataset = valid_dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
     counter = 0
     for epoch_idx in range(args.epochs):
@@ -158,6 +172,41 @@ if __name__ == "__main__":
                 gradients = tape.gradient(losses, net.trainable_variables)
                 optimizer.apply_gradients(zip(gradients, net.trainable_variables))
             #########################################
+
+            # validation
+            """###################################################################
+            valid_gts_list, valid_preds_list, valid_trans_list = list(), list(), list()
+            for data in valid_dataset:
+                valid_img_tensors, valid_paths = data
+                valid_paths = np.asarray(valid_paths)
+                valid_batch_size = np.shape(valid_img_tensors)[0]
+                valid_labels = [re.match("(.*)_(.*)_(.*)", str(valid_path)).group(2) for valid_path in valid_paths]
+
+                if "Attn" in args.Prediction:
+                    valid_length_for_pred = tf.zeros((valid_batch_size, args.batch_max_length), dtype=tf.int32)
+                elif "CTC" in args.Prediction:
+                    valid_length_for_pred = tf.multiply(tf.ones(valid_batch_size, dtype=tf.int32), args.batch_max_length + 1)
+                valid_text = tf.zeros((valid_batch_size, args.batch_max_length + 1))
+                valid_trans, valid_preds = net(valid_img_tensors, valid_text, is_train=False)
+                if "Attn" in args.Prediction:
+                    valid_preds_index = tf.argmax(valid_preds, axis=-1)
+                    valid_preds_str = converter.decode(valid_preds_index, valid_length_for_pred)
+                elif "CTC" in args.Prediction:
+                    valid_preds_str = converter.decode(valid_preds, valid_length_for_pred)
+                valid_preds_list.extend(valid_preds_str)
+                valid_gts_list.extend(valid_labels)
+                valid_trans_list.extend(valid_trans)
+
+            accuracy = accuracy_match(valid_gts_list, valid_preds_str)
+            ####################################################################"""
+
+            # transfer
+            # """"################################################################
+            if (loss <=10 or accuracy >= 70) and had_transfer == False:
+                args.Prediction = 'Attn' 
+                net.Prediction = Attention(args.hidden_size, args.num_class)
+                net.stages["Pred"] = 'Attn' 
+            ##################################################################"""
 
             print("epoch_index: %d, batch_index: (%d, %d), loss: " % (
                 epoch_idx, batch_idx,
